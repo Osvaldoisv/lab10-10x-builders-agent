@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@agents/db";
 import { runAgent } from "@agents/agent";
+import dns from "node:dns";
+
+// Turbopack worker threads don't inherit --dns-result-order, so force IPv4 here.
+dns.setDefaultResultOrder("ipv4first");
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET ?? "";

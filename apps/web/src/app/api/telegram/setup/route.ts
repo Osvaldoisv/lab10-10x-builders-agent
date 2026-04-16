@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import dns from "node:dns";
+
+// Turbopack worker threads don't inherit --dns-result-order, so force IPv4 here.
+dns.setDefaultResultOrder("ipv4first");
 
 /** Public HTTPS origin for Telegram (must be :443 / allowed ports). Not localhost. */
 function publicOriginForWebhook(request: Request): string {
