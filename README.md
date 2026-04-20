@@ -1,6 +1,6 @@
 # Agente personal (MVP)
 
-Monorepo con **Next.js**, **Supabase**, **LangGraph** y **OpenRouter**. Incluye chat web, onboarding, ajustes y bot de **Telegram** (opcional).
+Monorepo con **Next.js**, **Supabase**, **LangGraph** y **OpenRouter**. Incluye chat web, onboarding, ajustes, bot de **Telegram** (opcional) e integración con **GitHub** y **Google Calendar**.
 
 ## Requisitos previos
 
@@ -9,6 +9,8 @@ Monorepo con **Next.js**, **Supabase**, **LangGraph** y **OpenRouter**. Incluye 
 - Cuenta en **[Supabase](https://supabase.com)** (gratis).
 - Cuenta en **[OpenRouter](https://openrouter.ai)** para la API del modelo (clave de API).
 - *(Opcional)* Bot de Telegram creado con [@BotFather](https://t.me/BotFather) y una URL **HTTPS** pública para el webhook (en local suele usarse **ngrok** o similar).
+- *(Opcional)* **GitHub OAuth App** para integración con repositorios e issues.
+- *(Opcional)* **Google Cloud project** con la Calendar API habilitada y un OAuth 2.0 Client ID para integración con Google Calendar.
 
 ---
 
@@ -81,7 +83,11 @@ Next.js carga `.env*` desde el directorio de la app **`apps/web`**, no desde la 
    | `OPENROUTER_API_KEY` | Clave de OpenRouter |
    | `TELEGRAM_BOT_TOKEN` | *(Opcional)* Token del bot |
    | `TELEGRAM_WEBHOOK_SECRET` | *(Opcional)* Secreto que Telegram enviará en cabecera; debe coincidir con el configurado al registrar el webhook |
-   | `OAUTH_ENCRYPTION_KEY` | Reservado para cifrado de tokens OAuth en el futuro; puedes dejar un placeholder hasta integrar proveedores |
+   | `OAUTH_ENCRYPTION_KEY` | Clave AES-256 en hex para cifrar tokens OAuth en reposo. Genera con: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+   | `GITHUB_CLIENT_ID` | *(Opcional)* Client ID de la GitHub OAuth App |
+   | `GITHUB_CLIENT_SECRET` | *(Opcional)* Client Secret de la GitHub OAuth App |
+   | `GOOGLE_CLIENT_ID` | *(Opcional)* Client ID del proyecto en Google Cloud |
+   | `GOOGLE_CLIENT_SECRET` | *(Opcional)* Client Secret del proyecto en Google Cloud |
 
 Referencia de nombres: [.env.example](.env.example).
 
@@ -115,7 +121,37 @@ El modelo por defecto está definido en `packages/agent/src/model.ts` (OpenRoute
 
 ---
 
-## Paso 8 — Telegram (opcional)
+## Paso 8 — GitHub (opcional)
+
+La integración con GitHub permite al agente listar repositorios e issues, y crear nuevos (con confirmación del usuario).
+
+1. En [GitHub → Settings → Developer settings → OAuth Apps](https://github.com/settings/developers), crea una nueva OAuth App:
+   - **Homepage URL**: `http://localhost:3000`
+   - **Authorization callback URL**: `http://localhost:3000/api/auth/github/callback`
+2. Copia **Client ID** → `GITHUB_CLIENT_ID` y genera un **Client Secret** → `GITHUB_CLIENT_SECRET` en `apps/web/.env.local`.
+3. En la app, ve a **Ajustes** → **GitHub** → **Conectar con GitHub**.
+
+Al conectar, las herramientas de GitHub se habilitan automáticamente. El agente puede crear issues y repositorios, pero ambas acciones requieren confirmación explícita del usuario antes de ejecutarse.
+
+---
+
+## Paso 9 — Google Calendar (opcional)
+
+La integración con Google Calendar permite al agente listar los próximos eventos y confirmar asistencia (con confirmación del usuario).
+
+1. En [Google Cloud Console](https://console.cloud.google.com):
+   - Crea un proyecto (o usa uno existente).
+   - Habilita la **Google Calendar API**.
+   - En **APIs & Services → Credentials**, crea un **OAuth 2.0 Client ID** de tipo *Web application*:
+     - **Authorized redirect URIs**: `http://localhost:3000/api/auth/google/callback`
+2. Copia **Client ID** → `GOOGLE_CLIENT_ID` y **Client Secret** → `GOOGLE_CLIENT_SECRET` en `apps/web/.env.local`.
+3. En la app, ve a **Ajustes** → **Google Calendar** → **Conectar Google Calendar**.
+
+Al conectar, las herramientas de Google Calendar se habilitan automáticamente. Los tokens se almacenan cifrados con AES-256-GCM y se renuevan automáticamente con el `refresh_token`.
+
+---
+
+## Paso 10 — Telegram (opcional)
 
 Telegram **exige HTTPS** para webhooks. En local:
 
@@ -167,5 +203,8 @@ Después de vincular, los mensajes al bot usan el mismo pipeline que el chat web
 - **Errores al guardar perfil o mensajes**: confirma que ejecutaste la migración SQL y que RLS no bloquea por falta de sesión (debes estar logueado con el mismo usuario).
 - **Chat sin respuesta / 500 en `/api/chat`**: `OPENROUTER_API_KEY`, cuota en OpenRouter o modelo en `model.ts`.
 - **Telegram no responde**: webhook debe ser HTTPS; token y secreto correctos; visita de nuevo `/api/telegram/setup` si cambias la URL pública.
+- **GitHub/Google: redirige a `/settings?github=error` o `?google=error`**: revisa que las variables `CLIENT_ID`, `CLIENT_SECRET` y `OAUTH_ENCRYPTION_KEY` estén en `apps/web/.env.local` y que la Authorized callback URI en la OAuth App coincida exactamente.
+- **El agente dice que no tiene acceso al calendario o GitHub**: desconecta y vuelve a conectar la integración desde Ajustes para que las herramientas se habiliten automáticamente.
+- **Google Calendar: no devuelve `refresh_token`**: asegúrate de que en el flujo OAuth se pasan `access_type=offline` y `prompt=consent` (ya incluidos). Si ya autorizaste antes sin `offline`, revoca el acceso en [myaccount.google.com/permissions](https://myaccount.google.com/permissions) y reconecta.
 
 Si quieres, el siguiente paso natural es desplegar **Vercel** (o similar) para `apps/web`, definir las mismas variables de entorno en el panel del proveedor y usar la URL de producción en Supabase y en el webhook de Telegram.

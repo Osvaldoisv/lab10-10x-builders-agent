@@ -78,6 +78,28 @@ export const TOOL_CATALOG: ToolDefinition[] = [
       required: ["name"],
     },
   },
+  {
+    id: "google_calendar_get_events",
+    name: "google_calendar_get_events",
+    description: "Lista los próximos eventos del calendario de Google del usuario.",
+    risk: "low",
+    requires_integration: "google_calendar",
+    parameters_schema: { type: "object", properties: {}, required: [] },
+  },
+  {
+    id: "google_calendar_confirm_attendance",
+    name: "google_calendar_confirm_attendance",
+    description: "Confirma la asistencia del usuario a un evento del calendario de Google. Requiere confirmación.",
+    risk: "medium",
+    requires_integration: "google_calendar",
+    parameters_schema: {
+      type: "object",
+      properties: {
+        event_id: { type: "string", description: "ID del evento de Google Calendar" },
+      },
+      required: ["event_id"],
+    },
+  },
 ];
 
 export function getToolRisk(toolId: string): ToolRisk {

@@ -82,3 +82,11 @@ export interface ToolDefinition {
   requires_integration?: string;
   parameters_schema: Record<string, unknown>;
 }
+
+export interface ConfirmationRequired {
+  pending_confirmation: true;
+  tool_call_id: string;
+  action: string;
+  params: Record<string, unknown>;
+  description: string;
+}

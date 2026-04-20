@@ -10,7 +10,8 @@ export async function executeApprovedToolCall(
   toolCallId: string,
   toolName: string,
   args: Record<string, unknown>,
-  githubToken?: string
+  githubToken?: string,
+  googleAccessToken?: string | null
 ): Promise<Record<string, unknown>> {
   try {
     let result: Record<string, unknown>;
@@ -41,6 +42,20 @@ export async function executeApprovedToolCall(
         }
       ) as { number: number; html_url: string };
       result = { issue_number: data.number, url: data.html_url };
+    } else if (toolName === "google_calendar_confirm_attendance") {
+      if (!googleAccessToken) throw new Error("Google Calendar not connected");
+      const userEmail = process.env.USER_EMAIL;
+      const res = await googleCalendarFetch(
+        `/calendars/primary/events/${args.event_id}?sendUpdates=all`,
+        googleAccessToken,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            attendees: [{ email: userEmail ?? "", responseStatus: "accepted" }],
+          }),
+        }
+      ) as { id: string; summary: string };
+      result = { event_id: res.id, summary: res.summary, status: "accepted" };
     } else {
       throw new Error(`Tool not executable post-confirmation: ${toolName}`);
     }
@@ -60,6 +75,7 @@ interface ToolContext {
   enabledTools: UserToolSetting[];
   integrations: UserIntegration[];
   githubToken?: string;
+  googleAccessToken?: string | null;
 }
 
 function isToolAvailable(toolId: string, ctx: ToolContext): boolean {
@@ -94,6 +110,26 @@ async function githubFetch(
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`GitHub API error ${res.status}: ${body}`);
+  }
+  return res.json();
+}
+
+async function googleCalendarFetch(
+  path: string,
+  token: string,
+  options: RequestInit = {}
+): Promise<unknown> {
+  const res = await fetch(`https://www.googleapis.com/calendar/v3${path}`, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...(options.headers ?? {}),
+    },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Google Calendar API error ${res.status}: ${body}`);
   }
   return res.json();
 }
@@ -311,6 +347,101 @@ export function buildLangChainTools(ctx: ToolContext) {
             name: z.string(),
             description: z.string().optional().default(""),
             private: z.boolean().optional().default(false),
+          }),
+        }
+      )
+    );
+  }
+
+  if (isToolAvailable("google_calendar_get_events", ctx)) {
+    tools.push(
+      tool(
+        async (input) => {
+          const record = await createToolCall(
+            ctx.db, ctx.sessionId, "google_calendar_get_events", input, false
+          );
+          try {
+            if (!ctx.googleAccessToken) throw new Error("Google Calendar not connected");
+            const now = new Date().toISOString();
+            const params = new URLSearchParams({
+              timeMin: now,
+              maxResults: "10",
+              singleEvents: "true",
+              orderBy: "startTime",
+            });
+            const data = await googleCalendarFetch(
+              `/calendars/primary/events?${params.toString()}`,
+              ctx.googleAccessToken
+            ) as { items: Array<{
+              id: string;
+              summary: string;
+              start: { dateTime?: string; date?: string };
+              attendees?: Array<{ email: string; responseStatus: string; self?: boolean }>;
+            }> };
+            const events = (data.items ?? []).map((e) => ({
+              id: e.id,
+              summary: e.summary,
+              start: e.start.dateTime ?? e.start.date,
+              responseStatus: e.attendees?.find((a) => a.self)?.responseStatus ?? "unknown",
+            }));
+            const result = { events };
+            await updateToolCallStatus(ctx.db, record.id, "executed", result);
+            return JSON.stringify(result);
+          } catch (err) {
+            await updateToolCallStatus(ctx.db, record.id, "failed", { error: String(err) });
+            return JSON.stringify({ error: String(err) });
+          }
+        },
+        {
+          name: "google_calendar_get_events",
+          description: "Lista los próximos eventos del calendario de Google del usuario.",
+          schema: z.object({}),
+        }
+      )
+    );
+  }
+
+  if (isToolAvailable("google_calendar_confirm_attendance", ctx)) {
+    tools.push(
+      tool(
+        async (input) => {
+          const needsConfirm = toolRequiresConfirmation("google_calendar_confirm_attendance");
+          const record = await createToolCall(
+            ctx.db, ctx.sessionId, "google_calendar_confirm_attendance", input, needsConfirm
+          );
+          if (needsConfirm) {
+            return JSON.stringify({
+              pending_confirmation: true,
+              tool_call_id: record.id,
+              message: `Confirmar asistencia al evento con ID: ${input.event_id}.`,
+            });
+          }
+          try {
+            if (!ctx.googleAccessToken) throw new Error("Google Calendar not connected");
+            const userEmail = process.env.USER_EMAIL ?? "";
+            const data = await googleCalendarFetch(
+              `/calendars/primary/events/${input.event_id}?sendUpdates=all`,
+              ctx.googleAccessToken,
+              {
+                method: "PATCH",
+                body: JSON.stringify({
+                  attendees: [{ email: userEmail, responseStatus: "accepted" }],
+                }),
+              }
+            ) as { id: string; summary: string };
+            const result = { event_id: data.id, summary: data.summary, status: "accepted" };
+            await updateToolCallStatus(ctx.db, record.id, "executed", result);
+            return JSON.stringify(result);
+          } catch (err) {
+            await updateToolCallStatus(ctx.db, record.id, "failed", { error: String(err) });
+            return JSON.stringify({ error: String(err) });
+          }
+        },
+        {
+          name: "google_calendar_confirm_attendance",
+          description: "Confirma la asistencia del usuario a un evento del calendario de Google. Requiere confirmación.",
+          schema: z.object({
+            event_id: z.string(),
           }),
         }
       )

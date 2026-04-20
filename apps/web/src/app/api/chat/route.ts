@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createServerClient, decryptToken } from "@agents/db";
+import { createServerClient, decryptToken, getValidGoogleTokens } from "@agents/db";
 import { runAgent } from "@agents/agent";
 
 export async function POST(request: Request) {
@@ -78,6 +78,9 @@ export async function POST(request: Request) {
       }
     }
 
+    const googleTokens = await getValidGoogleTokens(user.id);
+    const googleAccessToken = googleTokens?.access_token ?? null;
+
     const result = await runAgent({
       message,
       userId: user.id,
@@ -100,6 +103,7 @@ export async function POST(request: Request) {
         created_at: i.created_at as string,
       })),
       githubToken,
+      googleAccessToken,
     });
 
     return NextResponse.json({

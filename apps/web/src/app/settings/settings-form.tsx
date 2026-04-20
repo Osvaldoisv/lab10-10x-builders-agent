@@ -10,6 +10,7 @@ interface Props {
   toolSettings: Array<{ tool_id: string; enabled: boolean }>;
   telegramLinked: boolean;
   githubConnected: boolean;
+  googleConnected: boolean;
 }
 
 const TOOL_IDS = [
@@ -19,9 +20,11 @@ const TOOL_IDS = [
   "github_list_issues",
   "github_create_issue",
   "github_create_repo",
+  "google_calendar_get_events",
+  "google_calendar_confirm_attendance",
 ];
 
-export function SettingsForm({ userId, profile, toolSettings, telegramLinked, githubConnected: initialGithubConnected }: Props) {
+export function SettingsForm({ userId, profile, toolSettings, telegramLinked, githubConnected: initialGithubConnected, googleConnected: initialGoogleConnected }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -36,6 +39,7 @@ export function SettingsForm({ userId, profile, toolSettings, telegramLinked, gi
   );
   const [linkCode, setLinkCode] = useState<string | null>(null);
   const [githubConnected, setGithubConnected] = useState(initialGithubConnected);
+  const [googleConnected, setGoogleConnected] = useState(initialGoogleConnected);
   const [disconnecting, setDisconnecting] = useState(false);
 
   const supabase = createBrowserClient(
@@ -81,6 +85,13 @@ export function SettingsForm({ userId, profile, toolSettings, telegramLinked, gi
     setDisconnecting(true);
     await fetch("/api/auth/github/disconnect", { method: "POST" });
     setGithubConnected(false);
+    setDisconnecting(false);
+  }
+
+  async function disconnectGoogle() {
+    setDisconnecting(true);
+    await fetch("/api/auth/google/disconnect", { method: "POST" });
+    setGoogleConnected(false);
     setDisconnecting(false);
   }
 
@@ -210,6 +221,35 @@ export function SettingsForm({ userId, profile, toolSettings, telegramLinked, gi
               className="inline-block rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-900"
             >
               Conectar con GitHub
+            </a>
+          </div>
+        )}
+      </section>
+
+      {/* Google Calendar */}
+      <section className="space-y-4">
+        <h2 className="text-base font-semibold">Google Calendar</h2>
+        {googleConnected ? (
+          <div className="flex items-center gap-3">
+            <p className="text-sm text-green-600">Google Calendar conectado.</p>
+            <button
+              onClick={disconnectGoogle}
+              disabled={disconnecting}
+              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-900"
+            >
+              {disconnecting ? "Desconectando..." : "Desconectar"}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-sm text-neutral-500">
+              Conecta tu Google Calendar para que el agente pueda ver y confirmar eventos.
+            </p>
+            <a
+              href="/api/auth/google"
+              className="inline-block rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-900"
+            >
+              Conectar Google Calendar
             </a>
           </div>
         )}
