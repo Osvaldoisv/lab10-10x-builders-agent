@@ -6,6 +6,7 @@ interface Message {
   role: string;
   content: string;
   created_at?: string;
+  pendingConfirmation?: { tool_call_id: string; message: string };
 }
 
 interface Props {
@@ -54,7 +55,8 @@ export function ChatInterface({ agentName, initialMessages }: Props) {
           ...prev,
           {
             role: "assistant",
-            content: `Se requiere confirmación: ${data.pendingConfirmation.message}\n\n¿Deseas proceder?`,
+            content: data.pendingConfirmation.message,
+            pendingConfirmation: data.pendingConfirmation,
           },
         ]);
       }
@@ -66,6 +68,35 @@ export function ChatInterface({ agentName, initialMessages }: Props) {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleConfirm(toolCallId: string, action: "approve" | "reject", msgIndex: number) {
+    const res = await fetch("/api/chat/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tool_call_id: toolCallId, action }),
+    });
+    const data = await res.json();
+
+    let resultText: string;
+    if (action === "reject") {
+      resultText = "Acción cancelada.";
+    } else if (data.result) {
+      const lines = Object.entries(data.result as Record<string, string>)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join("\n");
+      resultText = `Acción ejecutada.\n${lines}`;
+    } else if (!res.ok) {
+      resultText = `Error: ${data.error ?? "No se pudo ejecutar la acción."}`;
+    } else {
+      resultText = "Acción aprobada.";
+    }
+
+    setMessages((prev) =>
+      prev.map((m, i) =>
+        i === msgIndex ? { ...m, pendingConfirmation: undefined, content: m.content + `\n\n${resultText}` } : m
+      )
+    );
   }
 
   return (
@@ -94,6 +125,22 @@ export function ChatInterface({ agentName, initialMessages }: Props) {
                 }`}
               >
                 <p className="whitespace-pre-wrap">{msg.content}</p>
+                {msg.pendingConfirmation && (
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={() => handleConfirm(msg.pendingConfirmation!.tool_call_id, "approve", i)}
+                      className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700"
+                    >
+                      Aprobar
+                    </button>
+                    <button
+                      onClick={() => handleConfirm(msg.pendingConfirmation!.tool_call_id, "reject", i)}
+                      className="rounded-md border border-neutral-400 px-3 py-1.5 text-xs font-medium hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}

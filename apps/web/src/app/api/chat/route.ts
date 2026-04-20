@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createServerClient } from "@agents/db";
+import { createServerClient, decryptToken } from "@agents/db";
 import { runAgent } from "@agents/agent";
 
 export async function POST(request: Request) {
@@ -65,6 +65,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Failed to create session" }, { status: 500 });
     }
 
+    const encryptionKey = process.env.OAUTH_ENCRYPTION_KEY ?? "";
+    const githubIntegration = (integrations ?? []).find(
+      (i: Record<string, unknown>) => i.provider === "github" && i.status === "active"
+    );
+    let githubToken: string | undefined;
+    if (githubIntegration?.encrypted_tokens && encryptionKey) {
+      try {
+        githubToken = decryptToken(githubIntegration.encrypted_tokens as string, encryptionKey);
+      } catch {
+        // token decryption failed, proceed without it
+      }
+    }
+
     const result = await runAgent({
       message,
       userId: user.id,
@@ -86,15 +99,12 @@ export async function POST(request: Request) {
         status: i.status as "active" | "revoked" | "expired",
         created_at: i.created_at as string,
       })),
+      githubToken,
     });
 
-    const pendingConfirmation = result.response.includes("pending_confirmation")
-      ? JSON.parse(result.response)
-      : null;
-
     return NextResponse.json({
-      response: pendingConfirmation ? null : result.response,
-      pendingConfirmation,
+      response: result.pendingConfirmation ? null : result.response,
+      pendingConfirmation: result.pendingConfirmation ?? null,
       toolCalls: result.toolCalls,
     });
   } catch (error) {

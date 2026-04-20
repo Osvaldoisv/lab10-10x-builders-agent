@@ -9,6 +9,7 @@ interface Props {
   profile: Record<string, unknown> | null;
   toolSettings: Array<{ tool_id: string; enabled: boolean }>;
   telegramLinked: boolean;
+  githubConnected: boolean;
 }
 
 const TOOL_IDS = [
@@ -17,9 +18,10 @@ const TOOL_IDS = [
   "github_list_repos",
   "github_list_issues",
   "github_create_issue",
+  "github_create_repo",
 ];
 
-export function SettingsForm({ userId, profile, toolSettings, telegramLinked }: Props) {
+export function SettingsForm({ userId, profile, toolSettings, telegramLinked, githubConnected: initialGithubConnected }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -33,6 +35,8 @@ export function SettingsForm({ userId, profile, toolSettings, telegramLinked }: 
     toolSettings.filter((t) => t.enabled).map((t) => t.tool_id)
   );
   const [linkCode, setLinkCode] = useState<string | null>(null);
+  const [githubConnected, setGithubConnected] = useState(initialGithubConnected);
+  const [disconnecting, setDisconnecting] = useState(false);
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -71,6 +75,13 @@ export function SettingsForm({ userId, profile, toolSettings, telegramLinked }: 
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     router.refresh();
+  }
+
+  async function disconnectGitHub() {
+    setDisconnecting(true);
+    await fetch("/api/auth/github/disconnect", { method: "POST" });
+    setGithubConnected(false);
+    setDisconnecting(false);
   }
 
   async function generateTelegramCode() {
@@ -171,6 +182,35 @@ export function SettingsForm({ userId, profile, toolSettings, telegramLinked }: 
                 Generar código de vinculación
               </button>
             )}
+          </div>
+        )}
+      </section>
+
+      {/* GitHub */}
+      <section className="space-y-4">
+        <h2 className="text-base font-semibold">GitHub</h2>
+        {githubConnected ? (
+          <div className="flex items-center gap-3">
+            <p className="text-sm text-green-600">Cuenta de GitHub conectada.</p>
+            <button
+              onClick={disconnectGitHub}
+              disabled={disconnecting}
+              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-900"
+            >
+              {disconnecting ? "Desconectando..." : "Desconectar"}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-sm text-neutral-500">
+              Conecta tu cuenta de GitHub para que el agente pueda trabajar con tus repositorios e issues.
+            </p>
+            <a
+              href="/api/auth/github"
+              className="inline-block rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-900"
+            >
+              Conectar con GitHub
+            </a>
           </div>
         )}
       </section>

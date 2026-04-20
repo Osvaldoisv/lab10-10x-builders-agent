@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createServerClient } from "@agents/db";
+import { createServerClient, decryptToken } from "@agents/db";
 import { runAgent } from "@agents/agent";
 import dns from "node:dns";
 
@@ -228,6 +228,19 @@ export async function POST(request: Request) {
     .eq("user_id", userId)
     .eq("status", "active");
 
+  const encryptionKey = process.env.OAUTH_ENCRYPTION_KEY ?? "";
+  const githubIntegration = (integrations ?? []).find(
+    (i: Record<string, unknown>) => i.provider === "github" && i.status === "active"
+  );
+  let githubToken: string | undefined;
+  if (githubIntegration?.encrypted_tokens && encryptionKey) {
+    try {
+      githubToken = decryptToken(githubIntegration.encrypted_tokens as string, encryptionKey);
+    } catch {
+      // token decryption failed, proceed without it
+    }
+  }
+
   try {
     const result = await runAgent({
       message: text,
@@ -250,22 +263,15 @@ export async function POST(request: Request) {
         status: i.status as "active" | "revoked" | "expired",
         created_at: i.created_at as string,
       })),
+      githubToken,
     });
 
-    // Check if response contains a pending confirmation
-    let parsed: Record<string, unknown> | null = null;
-    try {
-      parsed = JSON.parse(result.response);
-    } catch {
-      // not JSON, regular text response
-    }
-
-    if (parsed?.pending_confirmation) {
-      await sendTelegramMessage(chatId, String(parsed.message ?? "Se requiere confirmación."), {
+    if (result.pendingConfirmation) {
+      await sendTelegramMessage(chatId, result.pendingConfirmation.message, {
         inline_keyboard: [
           [
-            { text: "Aprobar", callback_data: `approve:${parsed.tool_call_id}` },
-            { text: "Cancelar", callback_data: `reject:${parsed.tool_call_id}` },
+            { text: "Aprobar", callback_data: `approve:${result.pendingConfirmation.tool_call_id}` },
+            { text: "Cancelar", callback_data: `reject:${result.pendingConfirmation.tool_call_id}` },
           ],
         ],
       });
