@@ -43,6 +43,13 @@ const AVAILABLE_TOOLS = [
     risk: "medium" as const,
     requiresIntegration: "github",
   },
+  {
+    id: "bash",
+    name: "Bash: ejecutar comandos",
+    description: "Ejecuta comandos de shell en el servidor (requiere confirmación). Solo para entornos self-hosted con BASH_TOOL_ENABLED=true.",
+    risk: "high" as const,
+    requiresIntegration: null,
+  },
 ];
 
 const RISK_LABELS = {

@@ -9,13 +9,47 @@ interface Message {
   pendingConfirmation?: { tool_call_id: string; message: string };
 }
 
+interface PendingConfirmationProp {
+  id: string;
+  tool_name: string;
+  arguments_json: Record<string, unknown>;
+}
+
 interface Props {
   agentName: string;
   initialMessages: Message[];
+  initialPendingConfirmation?: PendingConfirmationProp | null;
 }
 
-export function ChatInterface({ agentName, initialMessages }: Props) {
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
+function buildPendingMessage(p: PendingConfirmationProp): string {
+  switch (p.tool_name) {
+    case "github_create_issue":
+      return `Crear issue "${p.arguments_json.title}" en ${p.arguments_json.owner}/${p.arguments_json.repo}.`;
+    case "github_create_repo": {
+      const visibility = p.arguments_json.private ? "privado" : "público";
+      return `Crear repositorio ${visibility} "${p.arguments_json.name}"${p.arguments_json.description ? `: ${p.arguments_json.description}` : ""}.`;
+    }
+    case "google_calendar_confirm_attendance":
+      return `Confirmar asistencia al evento con ID: ${p.arguments_json.event_id}.`;
+    default:
+      return `Acción pendiente de confirmación: ${p.tool_name}.`;
+  }
+}
+
+export function ChatInterface({ agentName, initialMessages, initialPendingConfirmation }: Props) {
+  const pendingAsMessage: Message[] =
+    initialPendingConfirmation
+      ? [{
+          role: "assistant",
+          content: buildPendingMessage(initialPendingConfirmation),
+          pendingConfirmation: {
+            tool_call_id: initialPendingConfirmation.id,
+            message: buildPendingMessage(initialPendingConfirmation),
+          },
+        }]
+      : [];
+
+  const [messages, setMessages] = useState<Message[]>([...initialMessages, ...pendingAsMessage]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -78,25 +112,27 @@ export function ChatInterface({ agentName, initialMessages }: Props) {
     });
     const data = await res.json();
 
-    let resultText: string;
-    if (action === "reject") {
-      resultText = "Acción cancelada.";
-    } else if (data.result) {
-      const lines = Object.entries(data.result as Record<string, string>)
-        .map(([k, v]) => `${k}: ${v}`)
-        .join("\n");
-      resultText = `Acción ejecutada.\n${lines}`;
-    } else if (!res.ok) {
-      resultText = `Error: ${data.error ?? "No se pudo ejecutar la acción."}`;
-    } else {
-      resultText = "Acción aprobada.";
+    if (!res.ok) {
+      setMessages((prev) =>
+        prev.map((m, i) =>
+          i === msgIndex
+            ? { ...m, pendingConfirmation: undefined, content: m.content + `\n\nError: ${data.error ?? "No se pudo ejecutar la acción."}` }
+            : m
+        )
+      );
+      return;
     }
 
-    setMessages((prev) =>
-      prev.map((m, i) =>
-        i === msgIndex ? { ...m, pendingConfirmation: undefined, content: m.content + `\n\n${resultText}` } : m
-      )
-    );
+    const agentReply = data.response as string | undefined;
+    setMessages((prev) => {
+      const updated = prev.map((m, i) =>
+        i === msgIndex ? { ...m, pendingConfirmation: undefined } : m
+      );
+      if (agentReply) {
+        updated.push({ role: "assistant", content: agentReply });
+      }
+      return updated;
+    });
   }
 
   return (

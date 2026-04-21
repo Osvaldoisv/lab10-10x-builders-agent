@@ -78,22 +78,89 @@ export async function POST(request: Request) {
     const cb = update.callback_query;
     const [action, toolCallId] = cb.data.split(":");
 
-    if (action === "approve" && toolCallId) {
-      await db
+    if ((action === "approve" || action === "reject") && toolCallId) {
+      const { data: toolCall } = await db
         .from("tool_calls")
-        .update({ status: "approved" })
+        .select("session_id, agent_sessions!inner(user_id)")
         .eq("id", toolCallId)
-        .eq("status", "pending_confirmation");
-      await answerCallbackQuery(cb.id, "Aprobado");
-      await sendTelegramMessage(cb.message.chat.id, "Acción aprobada. Ejecutando...");
-    } else if (action === "reject" && toolCallId) {
-      await db
-        .from("tool_calls")
-        .update({ status: "rejected" })
-        .eq("id", toolCallId)
-        .eq("status", "pending_confirmation");
-      await answerCallbackQuery(cb.id, "Rechazado");
-      await sendTelegramMessage(cb.message.chat.id, "Acción cancelada.");
+        .eq("status", "pending_confirmation")
+        .single();
+
+      if (!toolCall) {
+        await answerCallbackQuery(cb.id, "Acción ya procesada.");
+        return NextResponse.json({ ok: true });
+      }
+
+      await answerCallbackQuery(cb.id, action === "approve" ? "Aprobado" : "Rechazado");
+      await sendTelegramMessage(cb.message.chat.id, action === "approve" ? "Aprobando..." : "Cancelando...");
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const userId = (toolCall as any).agent_sessions.user_id as string;
+      const sessionId = (toolCall as any).session_id as string;
+
+      const { data: profile } = await db
+        .from("profiles")
+        .select("agent_system_prompt")
+        .eq("id", userId)
+        .single();
+
+      const { data: toolSettings } = await db
+        .from("user_tool_settings")
+        .select("*")
+        .eq("user_id", userId);
+
+      const { data: integrations } = await db
+        .from("user_integrations")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("status", "active");
+
+      const encryptionKey = process.env.OAUTH_ENCRYPTION_KEY ?? "";
+      const githubIntegration = (integrations ?? []).find(
+        (i: Record<string, unknown>) => i.provider === "github"
+      );
+      let githubToken: string | undefined;
+      if (githubIntegration?.encrypted_tokens && encryptionKey) {
+        try {
+          githubToken = decryptToken(githubIntegration.encrypted_tokens as string, encryptionKey);
+        } catch { /* token decryption failed */ }
+      }
+
+      const { getValidGoogleTokens } = await import("@agents/db");
+      const googleTokens = await getValidGoogleTokens(userId);
+      const googleAccessToken = googleTokens?.access_token ?? null;
+
+      try {
+        const result = await runAgent({
+          resumeDecision: action as "approve" | "reject",
+          sessionId,
+          userId,
+          systemPrompt: profile?.agent_system_prompt ?? "Eres un asistente útil.",
+          db,
+          enabledTools: (toolSettings ?? []).map((t: Record<string, unknown>) => ({
+            id: t.id as string,
+            user_id: t.user_id as string,
+            tool_id: t.tool_id as string,
+            enabled: t.enabled as boolean,
+            config_json: (t.config_json as Record<string, unknown>) ?? {},
+          })),
+          integrations: (integrations ?? []).map((i: Record<string, unknown>) => ({
+            id: i.id as string,
+            user_id: i.user_id as string,
+            provider: i.provider as string,
+            scopes: (i.scopes as string[]) ?? [],
+            status: i.status as "active" | "revoked" | "expired",
+            created_at: i.created_at as string,
+          })),
+          githubToken,
+          googleAccessToken,
+        });
+
+        await sendTelegramMessage(cb.message.chat.id, result.response);
+      } catch (err) {
+        console.error("Telegram HITL resume error:", err);
+        await sendTelegramMessage(cb.message.chat.id, "Error procesando la acción. Intenta de nuevo.");
+      }
     }
 
     return NextResponse.json({ ok: true });

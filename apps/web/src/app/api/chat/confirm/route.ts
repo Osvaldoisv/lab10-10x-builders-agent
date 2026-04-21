@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServerClient, decryptToken, getValidGoogleTokens } from "@agents/db";
-import { executeApprovedToolCall } from "@agents/agent";
+import { runAgent } from "@agents/agent";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -36,30 +36,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (action === "reject") {
-    await supabase
-      .from("tool_calls")
-      .update({ status: "rejected" })
-      .eq("id", tool_call_id);
-    return NextResponse.json({ ok: true, status: "rejected" });
-  }
+  const sessionId = (toolCall as any).session_id as string;
 
-  await supabase
-    .from("tool_calls")
-    .update({ status: "approved" })
-    .eq("id", tool_call_id);
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("agent_system_prompt")
+    .eq("id", user.id)
+    .single();
+
+  const { data: toolSettings } = await supabase
+    .from("user_tool_settings")
+    .select("*")
+    .eq("user_id", user.id);
 
   const { data: integrations } = await supabase
     .from("user_integrations")
     .select("*")
     .eq("user_id", user.id)
-    .eq("provider", "github")
-    .eq("status", "active")
-    .limit(1);
+    .eq("status", "active");
 
   const encryptionKey = process.env.OAUTH_ENCRYPTION_KEY ?? "";
   let githubToken: string | undefined;
-  const githubIntegration = integrations?.[0];
+  const githubIntegration = (integrations ?? []).find(
+    (i: Record<string, unknown>) => i.provider === "github"
+  );
   if (githubIntegration?.encrypted_tokens && encryptionKey) {
     try {
       githubToken = decryptToken(githubIntegration.encrypted_tokens as string, encryptionKey);
@@ -73,20 +73,35 @@ export async function POST(request: Request) {
 
   try {
     const db = createServerClient();
-    const result = await executeApprovedToolCall(
+    const result = await runAgent({
+      resumeDecision: action,
+      sessionId,
+      userId: user.id,
+      systemPrompt: profile?.agent_system_prompt ?? "Eres un asistente útil.",
       db,
-      tool_call_id,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (toolCall as any).tool_name as string,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (toolCall as any).arguments_json as Record<string, unknown>,
+      enabledTools: (toolSettings ?? []).map((t: Record<string, unknown>) => ({
+        id: t.id as string,
+        user_id: t.user_id as string,
+        tool_id: t.tool_id as string,
+        enabled: t.enabled as boolean,
+        config_json: (t.config_json as Record<string, unknown>) ?? {},
+      })),
+      integrations: (integrations ?? []).map((i: Record<string, unknown>) => ({
+        id: i.id as string,
+        user_id: i.user_id as string,
+        provider: i.provider as string,
+        scopes: (i.scopes as string[]) ?? [],
+        status: i.status as "active" | "revoked" | "expired",
+        created_at: i.created_at as string,
+      })),
       githubToken,
-      googleAccessToken
-    );
-    return NextResponse.json({ ok: true, status: "executed", result });
+      googleAccessToken,
+    });
+
+    return NextResponse.json({ ok: true, response: result.response });
   } catch (err) {
     return NextResponse.json(
-      { ok: false, status: "failed", error: String(err) },
+      { ok: false, error: String(err) },
       { status: 500 }
     );
   }

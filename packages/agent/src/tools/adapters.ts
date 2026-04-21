@@ -2,7 +2,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import type { DbClient } from "@agents/db";
 import type { UserToolSetting, UserIntegration } from "@agents/types";
-import { TOOL_CATALOG, toolRequiresConfirmation } from "./catalog";
+import { TOOL_CATALOG } from "./catalog";
 import { createToolCall, updateToolCallStatus } from "@agents/db";
 
 export async function executeApprovedToolCall(
@@ -56,6 +56,12 @@ export async function executeApprovedToolCall(
         }
       ) as { id: string; summary: string };
       result = { event_id: res.id, summary: res.summary, status: "accepted" };
+    } else if (toolName === "bash") {
+      const { executeBash } = await import("./bashExec");
+      result = await executeBash(
+        (args.terminal as string) ?? "default",
+        args.prompt as string
+      ) as unknown as Record<string, unknown>;
     } else {
       throw new Error(`Tool not executable post-confirmation: ${toolName}`);
     }
@@ -258,36 +264,7 @@ export function buildLangChainTools(ctx: ToolContext) {
   if (isToolAvailable("github_create_issue", ctx)) {
     tools.push(
       tool(
-        async (input) => {
-          const needsConfirm = toolRequiresConfirmation("github_create_issue");
-          const record = await createToolCall(
-            ctx.db, ctx.sessionId, "github_create_issue", input, needsConfirm
-          );
-          if (needsConfirm) {
-            return JSON.stringify({
-              pending_confirmation: true,
-              tool_call_id: record.id,
-              message: `Crear issue "${input.title}" en ${input.owner}/${input.repo}.`,
-            });
-          }
-          try {
-            if (!ctx.githubToken) throw new Error("GitHub not connected");
-            const data = await githubFetch(
-              `/repos/${input.owner}/${input.repo}/issues`,
-              ctx.githubToken,
-              {
-                method: "POST",
-                body: JSON.stringify({ title: input.title, body: input.body ?? "" }),
-              }
-            ) as { number: number; html_url: string };
-            const result = { issue_number: data.number, url: data.html_url };
-            await updateToolCallStatus(ctx.db, record.id, "executed", result);
-            return JSON.stringify(result);
-          } catch (err) {
-            await updateToolCallStatus(ctx.db, record.id, "failed", { error: String(err) });
-            return JSON.stringify({ error: String(err) });
-          }
-        },
+        async () => JSON.stringify({ status: "pending_hitl" }),
         {
           name: "github_create_issue",
           description: "Creates a new issue in a GitHub repository. Requires confirmation.",
@@ -305,41 +282,7 @@ export function buildLangChainTools(ctx: ToolContext) {
   if (isToolAvailable("github_create_repo", ctx)) {
     tools.push(
       tool(
-        async (input) => {
-          const needsConfirm = toolRequiresConfirmation("github_create_repo");
-          const record = await createToolCall(
-            ctx.db, ctx.sessionId, "github_create_repo", input, needsConfirm
-          );
-          if (needsConfirm) {
-            const visibility = input.private ? "privado" : "público";
-            return JSON.stringify({
-              pending_confirmation: true,
-              tool_call_id: record.id,
-              message: `Crear repositorio ${visibility} "${input.name}"${input.description ? `: ${input.description}` : ""}.`,
-            });
-          }
-          try {
-            if (!ctx.githubToken) throw new Error("GitHub not connected");
-            const data = await githubFetch(
-              "/user/repos",
-              ctx.githubToken,
-              {
-                method: "POST",
-                body: JSON.stringify({
-                  name: input.name,
-                  description: input.description ?? "",
-                  private: input.private ?? false,
-                }),
-              }
-            ) as { full_name: string; html_url: string };
-            const result = { full_name: data.full_name, url: data.html_url };
-            await updateToolCallStatus(ctx.db, record.id, "executed", result);
-            return JSON.stringify(result);
-          } catch (err) {
-            await updateToolCallStatus(ctx.db, record.id, "failed", { error: String(err) });
-            return JSON.stringify({ error: String(err) });
-          }
-        },
+        async () => JSON.stringify({ status: "pending_hitl" }),
         {
           name: "github_create_repo",
           description: "Creates a new GitHub repository for the authenticated user. Requires confirmation.",
@@ -347,6 +290,22 @@ export function buildLangChainTools(ctx: ToolContext) {
             name: z.string(),
             description: z.string().optional().default(""),
             private: z.boolean().optional().default(false),
+          }),
+        }
+      )
+    );
+  }
+
+  if (isToolAvailable("bash", ctx)) {
+    tools.push(
+      tool(
+        async () => JSON.stringify({ status: "pending_hitl" }),
+        {
+          name: "bash",
+          description: "Ejecuta un comando de shell en el servidor. Requiere confirmación.",
+          schema: z.object({
+            terminal: z.string().optional().default("default"),
+            prompt: z.string().max(4096),
           }),
         }
       )
@@ -404,39 +363,7 @@ export function buildLangChainTools(ctx: ToolContext) {
   if (isToolAvailable("google_calendar_confirm_attendance", ctx)) {
     tools.push(
       tool(
-        async (input) => {
-          const needsConfirm = toolRequiresConfirmation("google_calendar_confirm_attendance");
-          const record = await createToolCall(
-            ctx.db, ctx.sessionId, "google_calendar_confirm_attendance", input, needsConfirm
-          );
-          if (needsConfirm) {
-            return JSON.stringify({
-              pending_confirmation: true,
-              tool_call_id: record.id,
-              message: `Confirmar asistencia al evento con ID: ${input.event_id}.`,
-            });
-          }
-          try {
-            if (!ctx.googleAccessToken) throw new Error("Google Calendar not connected");
-            const userEmail = process.env.USER_EMAIL ?? "";
-            const data = await googleCalendarFetch(
-              `/calendars/primary/events/${input.event_id}?sendUpdates=all`,
-              ctx.googleAccessToken,
-              {
-                method: "PATCH",
-                body: JSON.stringify({
-                  attendees: [{ email: userEmail, responseStatus: "accepted" }],
-                }),
-              }
-            ) as { id: string; summary: string };
-            const result = { event_id: data.id, summary: data.summary, status: "accepted" };
-            await updateToolCallStatus(ctx.db, record.id, "executed", result);
-            return JSON.stringify(result);
-          } catch (err) {
-            await updateToolCallStatus(ctx.db, record.id, "failed", { error: String(err) });
-            return JSON.stringify({ error: String(err) });
-          }
-        },
+        async () => JSON.stringify({ status: "pending_hitl" }),
         {
           name: "google_calendar_confirm_attendance",
           description: "Confirma la asistencia del usuario a un evento del calendario de Google. Requiere confirmación.",

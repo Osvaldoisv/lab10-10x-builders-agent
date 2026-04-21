@@ -22,6 +22,7 @@ const TOOL_IDS = [
   "github_create_repo",
   "google_calendar_get_events",
   "google_calendar_confirm_attendance",
+  "bash",
 ];
 
 export function SettingsForm({ userId, profile, toolSettings, telegramLinked, githubConnected: initialGithubConnected, googleConnected: initialGoogleConnected }: Props) {

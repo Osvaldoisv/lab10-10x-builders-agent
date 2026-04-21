@@ -71,6 +71,7 @@ export function OnboardingWizard({ userId, initialProfile, initialToolSettings }
       "github_list_repos",
       "github_list_issues",
       "github_create_issue",
+      "bash",
     ];
 
     for (const toolId of TOOL_IDS) {

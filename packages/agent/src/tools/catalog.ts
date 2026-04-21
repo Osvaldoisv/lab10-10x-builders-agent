@@ -4,7 +4,8 @@ export const TOOL_CATALOG: ToolDefinition[] = [
   {
     id: "get_user_preferences",
     name: "get_user_preferences",
-    description: "Returns the current user preferences and agent configuration.",
+    description:
+      "Returns the current user preferences and agent configuration.",
     risk: "low",
     parameters_schema: { type: "object", properties: {}, required: [] },
   },
@@ -19,7 +20,7 @@ export const TOOL_CATALOG: ToolDefinition[] = [
     id: "github_list_repos",
     name: "github_list_repos",
     description: "Lists the user's GitHub repositories.",
-    risk: "low",
+    risk: "high",
     requires_integration: "github",
     parameters_schema: {
       type: "object",
@@ -48,7 +49,8 @@ export const TOOL_CATALOG: ToolDefinition[] = [
   {
     id: "github_create_issue",
     name: "github_create_issue",
-    description: "Creates a new issue in a GitHub repository. Requires confirmation.",
+    description:
+      "Creates a new issue in a GitHub repository. Requires confirmation.",
     risk: "medium",
     requires_integration: "github",
     parameters_schema: {
@@ -65,7 +67,8 @@ export const TOOL_CATALOG: ToolDefinition[] = [
   {
     id: "github_create_repo",
     name: "github_create_repo",
-    description: "Creates a new GitHub repository for the authenticated user. Requires confirmation.",
+    description:
+      "Creates a new GitHub repository for the authenticated user. Requires confirmation.",
     risk: "high",
     requires_integration: "github",
     parameters_schema: {
@@ -73,7 +76,10 @@ export const TOOL_CATALOG: ToolDefinition[] = [
       properties: {
         name: { type: "string", description: "Repository name" },
         description: { type: "string", description: "Repository description" },
-        private: { type: "boolean", description: "Whether the repository is private" },
+        private: {
+          type: "boolean",
+          description: "Whether the repository is private",
+        },
       },
       required: ["name"],
     },
@@ -81,21 +87,47 @@ export const TOOL_CATALOG: ToolDefinition[] = [
   {
     id: "google_calendar_get_events",
     name: "google_calendar_get_events",
-    description: "Lista los próximos eventos del calendario de Google del usuario.",
+    description:
+      "Lista los próximos eventos del calendario de Google del usuario.",
     risk: "low",
     requires_integration: "google_calendar",
     parameters_schema: { type: "object", properties: {}, required: [] },
   },
   {
+    id: "bash",
+    name: "bash",
+    description:
+      "Ejecuta un comando de shell en el servidor. Requiere confirmación.",
+    risk: "high",
+    parameters_schema: {
+      type: "object",
+      properties: {
+        terminal: {
+          type: "string",
+          description: "Identificador lógico del terminal (para correlación y logs)",
+        },
+        prompt: {
+          type: "string",
+          description: "Comando a ejecutar con bash -lc",
+        },
+      },
+      required: ["prompt"],
+    },
+  },
+  {
     id: "google_calendar_confirm_attendance",
     name: "google_calendar_confirm_attendance",
-    description: "Confirma la asistencia del usuario a un evento del calendario de Google. Requiere confirmación.",
+    description:
+      "Confirma la asistencia del usuario a un evento del calendario de Google. Requiere confirmación.",
     risk: "medium",
     requires_integration: "google_calendar",
     parameters_schema: {
       type: "object",
       properties: {
-        event_id: { type: "string", description: "ID del evento de Google Calendar" },
+        event_id: {
+          type: "string",
+          description: "ID del evento de Google Calendar",
+        },
       },
       required: ["event_id"],
     },

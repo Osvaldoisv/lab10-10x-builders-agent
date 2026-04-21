@@ -26,14 +26,26 @@ export default async function ChatPage() {
     .single();
 
   let sessionMessages: Array<{ role: string; content: string; created_at: string }> = [];
+  let initialPendingConfirmation: { id: string; tool_name: string; arguments_json: Record<string, unknown> } | null = null;
+
   if (messages?.id) {
-    const { data } = await supabase
-      .from("agent_messages")
-      .select("role, content, created_at")
-      .eq("session_id", messages.id)
-      .order("created_at", { ascending: true })
-      .limit(50);
-    sessionMessages = data ?? [];
+    const [messagesRes, pendingRes] = await Promise.all([
+      supabase
+        .from("agent_messages")
+        .select("role, content, created_at")
+        .eq("session_id", messages.id)
+        .order("created_at", { ascending: true })
+        .limit(50),
+      supabase
+        .from("tool_calls")
+        .select("id, tool_name, arguments_json")
+        .eq("session_id", messages.id)
+        .eq("status", "pending_confirmation")
+        .order("created_at", { ascending: false })
+        .limit(1),
+    ]);
+    sessionMessages = messagesRes.data ?? [];
+    initialPendingConfirmation = (pendingRes.data?.[0] ?? null) as typeof initialPendingConfirmation;
   }
 
   return (
@@ -68,6 +80,7 @@ export default async function ChatPage() {
       <ChatInterface
         agentName={profile.agent_name as string}
         initialMessages={sessionMessages}
+        initialPendingConfirmation={initialPendingConfirmation}
       />
     </div>
   );
