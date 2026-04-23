@@ -62,6 +62,19 @@ export async function executeApprovedToolCall(
         (args.terminal as string) ?? "default",
         args.prompt as string
       ) as unknown as Record<string, unknown>;
+    } else if (toolName === "write_file") {
+      const { executeWriteFile } = await import("./fileTools");
+      result = await executeWriteFile({
+        path: args.path as string,
+        content: args.content as string,
+      }) as unknown as Record<string, unknown>;
+    } else if (toolName === "edit_file") {
+      const { executeEditFile } = await import("./fileTools");
+      result = await executeEditFile({
+        path: args.path as string,
+        old_string: args.old_string as string,
+        new_string: args.new_string as string,
+      }) as unknown as Record<string, unknown>;
     } else {
       throw new Error(`Tool not executable post-confirmation: ${toolName}`);
     }
@@ -306,6 +319,69 @@ export function buildLangChainTools(ctx: ToolContext) {
           schema: z.object({
             terminal: z.string().optional().default("default"),
             prompt: z.string().max(4096),
+          }),
+        }
+      )
+    );
+  }
+
+  if (isToolAvailable("read_file", ctx)) {
+    tools.push(
+      tool(
+        async (input) => {
+          const record = await createToolCall(
+            ctx.db, ctx.sessionId, "read_file", input as Record<string, unknown>, false
+          );
+          try {
+            const { executeReadFile } = await import("./fileTools");
+            const result = await executeReadFile(input);
+            await updateToolCallStatus(ctx.db, record.id, "executed", result as unknown as Record<string, unknown>);
+            return JSON.stringify(result);
+          } catch (err) {
+            await updateToolCallStatus(ctx.db, record.id, "failed", { error: String(err) });
+            return JSON.stringify({ ok: false, tool: "read_file", path: input.path, error: { code: "UNEXPECTED", message: String(err) } });
+          }
+        },
+        {
+          name: "read_file",
+          description: "Reads an existing text file under the configured workspace root. Returns file content and line metadata.",
+          schema: z.object({
+            path: z.string().describe("Ruta relativa al workspace root (sin ..)"),
+            offset: z.number().int().positive().optional().describe("Línea inicial 1-based"),
+            limit: z.number().int().positive().max(2000).optional().describe("Número máximo de líneas"),
+          }),
+        }
+      )
+    );
+  }
+
+  if (isToolAvailable("write_file", ctx)) {
+    tools.push(
+      tool(
+        async () => JSON.stringify({ status: "pending_hitl" }),
+        {
+          name: "write_file",
+          description: "Creates a new file with the given UTF-8 content. Fails if the file already exists. Requires confirmation.",
+          schema: z.object({
+            path: z.string().describe("Ruta relativa al workspace root (sin ..)"),
+            content: z.string().max(500_000).describe("Contenido completo del archivo a crear"),
+          }),
+        }
+      )
+    );
+  }
+
+  if (isToolAvailable("edit_file", ctx)) {
+    tools.push(
+      tool(
+        async () => JSON.stringify({ status: "pending_hitl" }),
+        {
+          name: "edit_file",
+          description: "Edits an existing file by replacing exactly one occurrence of old_string with new_string. Requires confirmation.",
+          schema: z.object({
+            path: z.string().describe("Ruta relativa al workspace root (sin ..)"),
+            old_string: z.string().max(100_000).describe("Fragmento literal exacto a reemplazar"),
+            new_string: z.string().max(100_000).describe("Texto de reemplazo"),
           }),
         }
       )

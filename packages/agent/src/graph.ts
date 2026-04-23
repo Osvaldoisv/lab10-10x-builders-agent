@@ -71,6 +71,18 @@ function buildConfirmationMessage(toolName: string, args: Record<string, unknown
       const terminalTag = args.terminal ? ` [terminal: ${args.terminal}]` : "";
       return `Ejecutar comando bash${terminalTag}: \`${preview}\``;
     }
+    case "write_file": {
+      const rawContent = String(args.content ?? "");
+      const preview = rawContent.length > 120 ? rawContent.slice(0, 120) + "…" : rawContent;
+      return `Crear archivo \`${args.path}\` con contenido:\n\`\`\`\n${preview}\n\`\`\``;
+    }
+    case "edit_file": {
+      const rawOld = String(args.old_string ?? "");
+      const rawNew = String(args.new_string ?? "");
+      const oldPreview = rawOld.length > 80 ? rawOld.slice(0, 80) + "…" : rawOld;
+      const newPreview = rawNew.length > 80 ? rawNew.slice(0, 80) + "…" : rawNew;
+      return `Editar archivo \`${args.path}\`:\n- Reemplazar: \`${oldPreview}\`\n- Por: \`${newPreview}\``;
+    }
     default:
       return `Ejecutar acción: ${toolName}.`;
   }
@@ -210,19 +222,14 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
     if (!message) throw new Error("message is required when resumeDecision is not set");
 
     const history = await getSessionMessages(db, sessionId, 30);
-    const priorMessages: BaseMessage[] = history.map((m) => {
-      if (m.role === "user") return new HumanMessage(m.content);
-      if (m.role === "assistant") return new AIMessage(m.content);
-      return new HumanMessage(m.content);
-    });
-
     await addMessage(db, sessionId, "user", message);
 
-    const initialMessages: BaseMessage[] = [
-      new SystemMessage(systemPrompt),
-      ...priorMessages,
-      new HumanMessage(message),
-    ];
+    // For new sessions pass the system prompt; for existing ones the checkpointer
+    // already holds the full state (AIMessage with tool_calls, ToolMessages, etc.)
+    // so we only append the new human message to avoid corrupting the thread.
+    const initialMessages: BaseMessage[] = history.length === 0
+      ? [new SystemMessage(systemPrompt), new HumanMessage(message)]
+      : [new HumanMessage(message)];
 
     finalState = await app.invoke(
       { messages: initialMessages, sessionId, userId, systemPrompt },

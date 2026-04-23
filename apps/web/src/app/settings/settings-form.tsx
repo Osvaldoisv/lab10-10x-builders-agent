@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
+import { TOOL_CATALOG } from "@agents/types";
 
 interface Props {
   userId: string;
@@ -13,17 +14,7 @@ interface Props {
   googleConnected: boolean;
 }
 
-const TOOL_IDS = [
-  "get_user_preferences",
-  "list_enabled_tools",
-  "github_list_repos",
-  "github_list_issues",
-  "github_create_issue",
-  "github_create_repo",
-  "google_calendar_get_events",
-  "google_calendar_confirm_attendance",
-  "bash",
-];
+const TOOL_IDS = TOOL_CATALOG.map((t) => t.id);
 
 export function SettingsForm({ userId, profile, toolSettings, telegramLinked, githubConnected: initialGithubConnected, googleConnected: initialGoogleConnected }: Props) {
   const router = useRouter();

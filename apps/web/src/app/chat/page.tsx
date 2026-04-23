@@ -61,6 +61,14 @@ export default async function ChatPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          <form action="/api/chat/new-session" method="POST">
+            <button
+              type="submit"
+              className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-900"
+            >
+              Nueva conversación
+            </button>
+          </form>
           <a
             href="/settings"
             className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-900"

@@ -1,56 +1,12 @@
 "use client";
 
+import { TOOL_CATALOG } from "@agents/types";
 import type { OnboardingData } from "../wizard";
 
 interface Props {
   data: OnboardingData;
   onChange: (partial: Partial<OnboardingData>) => void;
 }
-
-const AVAILABLE_TOOLS = [
-  {
-    id: "get_user_preferences",
-    name: "Preferencias del usuario",
-    description: "Consulta tu configuración y preferencias.",
-    risk: "low" as const,
-    requiresIntegration: null,
-  },
-  {
-    id: "list_enabled_tools",
-    name: "Listar herramientas",
-    description: "Muestra qué herramientas tienes habilitadas.",
-    risk: "low" as const,
-    requiresIntegration: null,
-  },
-  {
-    id: "github_list_repos",
-    name: "GitHub: listar repos",
-    description: "Lista tus repositorios de GitHub.",
-    risk: "low" as const,
-    requiresIntegration: "github",
-  },
-  {
-    id: "github_list_issues",
-    name: "GitHub: listar issues",
-    description: "Lista issues de un repositorio.",
-    risk: "low" as const,
-    requiresIntegration: "github",
-  },
-  {
-    id: "github_create_issue",
-    name: "GitHub: crear issue",
-    description: "Crea un issue nuevo (requiere confirmación).",
-    risk: "medium" as const,
-    requiresIntegration: "github",
-  },
-  {
-    id: "bash",
-    name: "Bash: ejecutar comandos",
-    description: "Ejecuta comandos de shell en el servidor (requiere confirmación). Solo para entornos self-hosted con BASH_TOOL_ENABLED=true.",
-    risk: "high" as const,
-    requiresIntegration: null,
-  },
-];
 
 const RISK_LABELS = {
   low: { text: "Bajo", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" },
@@ -79,7 +35,7 @@ export function StepTools({ data, onChange }: Props) {
       </div>
 
       <div className="space-y-3">
-        {AVAILABLE_TOOLS.map((tool) => {
+        {TOOL_CATALOG.map((tool) => {
           const risk = RISK_LABELS[tool.risk];
           const enabled = data.enabledTools.includes(tool.id);
           return (
@@ -99,18 +55,20 @@ export function StepTools({ data, onChange }: Props) {
               />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{tool.name}</span>
+                  <span className="text-sm font-medium">
+                    {tool.displayName ?? tool.name}
+                  </span>
                   <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${risk.color}`}>
                     {risk.text}
                   </span>
-                  {tool.requiresIntegration && (
+                  {tool.requires_integration && (
                     <span className="text-xs text-neutral-400">
-                      requiere {tool.requiresIntegration}
+                      requiere {tool.requires_integration}
                     </span>
                   )}
                 </div>
                 <p className="text-xs text-neutral-500 mt-0.5">
-                  {tool.description}
+                  {tool.displayDescription ?? tool.description}
                 </p>
               </div>
             </label>

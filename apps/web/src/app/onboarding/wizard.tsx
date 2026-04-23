@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
+import { TOOL_CATALOG } from "@agents/types";
 import { StepProfile } from "./steps/step-profile";
 import { StepAgent } from "./steps/step-agent";
 import { StepTools } from "./steps/step-tools";
@@ -65,14 +66,7 @@ export function OnboardingWizard({ userId, initialProfile, initialToolSettings }
       updated_at: new Date().toISOString(),
     });
 
-    const TOOL_IDS = [
-      "get_user_preferences",
-      "list_enabled_tools",
-      "github_list_repos",
-      "github_list_issues",
-      "github_create_issue",
-      "bash",
-    ];
+    const TOOL_IDS = TOOL_CATALOG.map((t) => t.id);
 
     for (const toolId of TOOL_IDS) {
       await supabase.from("user_tool_settings").upsert(
