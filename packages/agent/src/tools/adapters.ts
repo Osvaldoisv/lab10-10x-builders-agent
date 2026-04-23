@@ -75,6 +75,46 @@ export async function executeApprovedToolCall(
         old_string: args.old_string as string,
         new_string: args.new_string as string,
       }) as unknown as Record<string, unknown>;
+    } else if (toolName === "schedule_task") {
+      const { data: tcSession } = await db
+        .from("tool_calls")
+        .select("agent_sessions!inner(user_id)")
+        .eq("id", toolCallId)
+        .single();
+      if (!tcSession) throw new Error("Tool call session not found");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const userId = (tcSession as any).agent_sessions.user_id as string;
+
+      const { createScheduledTask, nextRunFromCron } = await import("@agents/db");
+      const schedType = args.schedule_type as "one_time" | "recurring";
+      const tz = (args.timezone as string | undefined) ?? "UTC";
+
+      let nextRunAt: string;
+      if (schedType === "one_time") {
+        if (!args.run_at) throw new Error("run_at is required for one_time tasks");
+        nextRunAt = args.run_at as string;
+      } else {
+        if (!args.cron_expr) throw new Error("cron_expr is required for recurring tasks");
+        nextRunAt = nextRunFromCron(args.cron_expr as string, tz).toISOString();
+      }
+
+      const task = await createScheduledTask(db, userId, {
+        prompt:        args.prompt as string,
+        schedule_type: schedType,
+        run_at:        (args.run_at as string | undefined) ?? null,
+        cron_expr:     (args.cron_expr as string | undefined) ?? null,
+        timezone:      tz,
+        next_run_at:   nextRunAt,
+      });
+
+      result = {
+        task_id:       task.id,
+        schedule_type: task.schedule_type,
+        next_run_at:   task.next_run_at,
+        message: schedType === "one_time"
+          ? `Tarea programada para ${nextRunAt}.`
+          : `Tarea recurrente creada. Próxima ejecución: ${nextRunAt}.`,
+      };
     } else {
       throw new Error(`Tool not executable post-confirmation: ${toolName}`);
     }
@@ -431,6 +471,29 @@ export function buildLangChainTools(ctx: ToolContext) {
           name: "google_calendar_get_events",
           description: "Lista los próximos eventos del calendario de Google del usuario.",
           schema: z.object({}),
+        }
+      )
+    );
+  }
+
+  if (isToolAvailable("schedule_task", ctx)) {
+    tools.push(
+      tool(
+        async () => JSON.stringify({ status: "pending_hitl" }),
+        {
+          name: "schedule_task",
+          description: "Crea una tarea programada que ejecutará un prompt del agente en un momento específico. Requiere confirmación.",
+          schema: z.object({
+            prompt:        z.string().describe(
+              "Instrucción que ejecutará el agente en segundo plano cuando llegue el momento. " +
+              "Para recordatorios simples, usa el formato: 'Notifica al usuario: <mensaje del recordatorio>'. " +
+              "Ejemplo: 'Notifica al usuario: ¡Es hora de tomar agua!'."
+            ),
+            schedule_type: z.enum(["one_time", "recurring"]),
+            run_at:        z.string().optional().describe("ISO timestamp para tareas de una sola vez"),
+            cron_expr:     z.string().optional().describe("Expresión cron de 5 campos para tareas recurrentes"),
+            timezone:      z.string().optional().default("UTC").describe("Zona horaria IANA"),
+          }),
         }
       )
     );

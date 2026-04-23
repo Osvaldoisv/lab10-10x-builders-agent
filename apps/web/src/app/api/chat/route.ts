@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServerClient, decryptToken, getValidGoogleTokens } from "@agents/db";
 import { runAgent } from "@agents/agent";
+import { buildSystemPrompt } from "@/lib/system-prompt";
 
 export async function POST(request: Request) {
   try {
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("agent_system_prompt, agent_name")
+      .select("agent_system_prompt, agent_name, timezone")
       .eq("id", user.id)
       .single();
 
@@ -85,7 +86,10 @@ export async function POST(request: Request) {
       message,
       userId: user.id,
       sessionId: session.id,
-      systemPrompt: (profile?.agent_system_prompt as string) ?? "Eres un asistente útil.",
+      systemPrompt: buildSystemPrompt(
+        (profile?.agent_system_prompt as string) ?? "Eres un asistente útil.",
+        (profile?.timezone as string) ?? "UTC"
+      ),
       db,
       enabledTools: (toolSettings ?? []).map((t: Record<string, unknown>) => ({
         id: t.id as string,

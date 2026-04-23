@@ -83,6 +83,14 @@ function buildConfirmationMessage(toolName: string, args: Record<string, unknown
       const newPreview = rawNew.length > 80 ? rawNew.slice(0, 80) + "…" : rawNew;
       return `Editar archivo \`${args.path}\`:\n- Reemplazar: \`${oldPreview}\`\n- Por: \`${newPreview}\``;
     }
+    case "schedule_task": {
+      const schedType = args.schedule_type === "one_time" ? "una vez" : "recurrente";
+      const when = args.schedule_type === "one_time"
+        ? `para: ${args.run_at}`
+        : `con cron: \`${args.cron_expr}\``;
+      const promptPreview = String(args.prompt ?? "").slice(0, 120);
+      return `Crear tarea programada (${schedType}) ${when}:\n"${promptPreview}"`;
+    }
     default:
       return `Ejecutar acción: ${toolName}.`;
   }
@@ -110,7 +118,32 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
   async function agentNode(
     state: typeof GraphState.State
   ): Promise<Partial<typeof GraphState.State>> {
-    const response = await modelWithTools.invoke(state.messages);
+    const { ToolMessage } = await import("@langchain/core/messages");
+
+    // Inject placeholder ToolMessages for any AIMessage whose tool_calls have no responses.
+    // This can happen when an interrupt() fired inside toolExecutorNode (HITL) and the
+    // user sent a new message instead of approving/rejecting — the checkpointer persists
+    // the AIMessage with tool_calls but without the following ToolMessages.
+    const sanitized: BaseMessage[] = [];
+    for (let i = 0; i < state.messages.length; i++) {
+      const msg = state.messages[i];
+      sanitized.push(msg);
+      if (msg instanceof AIMessage && msg.tool_calls?.length) {
+        const nextMsg = state.messages[i + 1];
+        if (!(nextMsg instanceof ToolMessage)) {
+          for (const tc of msg.tool_calls) {
+            sanitized.push(
+              new ToolMessage({
+                content: JSON.stringify({ status: "cancelled", message: "Acción cancelada automáticamente." }),
+                tool_call_id: tc.id!,
+              })
+            );
+          }
+        }
+      }
+    }
+
+    const response = await modelWithTools.invoke(sanitized);
     return { messages: [response] };
   }
 

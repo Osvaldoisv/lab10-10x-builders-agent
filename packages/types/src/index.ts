@@ -1,4 +1,4 @@
-export type Channel = "web" | "telegram";
+export type Channel = "web" | "telegram" | "background";
 
 export type ToolRisk = "low" | "medium" | "high";
 
@@ -253,6 +253,25 @@ export const TOOL_CATALOG: ToolDefinition[] = [
     },
   },
   {
+    id: "schedule_task",
+    name: "schedule_task",
+    description: "Creates a scheduled task that will run an agent prompt at a specified time. Supports one-time (run_at) and recurring (cron_expr + timezone) schedules. Requires confirmation.",
+    risk: "medium",
+    displayName: "Programar tarea",
+    displayDescription: "Crea una tarea que el agente ejecutará en un momento específico (requiere confirmación).",
+    parameters_schema: {
+      type: "object",
+      properties: {
+        prompt:        { type: "string", description: "Prompt que ejecutará el agente cuando llegue el momento" },
+        schedule_type: { type: "string", enum: ["one_time", "recurring"] },
+        run_at:        { type: "string", description: "ISO timestamp para tareas de una sola vez (schedule_type=one_time)" },
+        cron_expr:     { type: "string", description: "Expresión cron de 5 campos para tareas recurrentes (schedule_type=recurring)" },
+        timezone:      { type: "string", description: "Zona horaria IANA (p.ej. America/Santiago). Por defecto UTC." },
+      },
+      required: ["prompt", "schedule_type"],
+    },
+  },
+  {
     id: "edit_file",
     name: "edit_file",
     description:
@@ -271,6 +290,33 @@ export const TOOL_CATALOG: ToolDefinition[] = [
     },
   },
 ];
+
+export interface ScheduledTask {
+  id: string;
+  user_id: string;
+  prompt: string;
+  schedule_type: "one_time" | "recurring";
+  run_at: string | null;
+  cron_expr: string | null;
+  timezone: string;
+  status: "active" | "running" | "completed" | "failed" | "cancelled";
+  last_run_at: string | null;
+  next_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ScheduledTaskRun {
+  id: string;
+  task_id: string;
+  status: "running" | "completed" | "failed";
+  started_at: string;
+  finished_at: string | null;
+  error: string | null;
+  agent_session_id: string | null;
+  notified: boolean;
+  notified_skip_reason: string | null;
+}
 
 export interface ConfirmationRequired {
   pending_confirmation: true;

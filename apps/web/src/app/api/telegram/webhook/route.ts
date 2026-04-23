@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerClient, decryptToken } from "@agents/db";
 import { runAgent } from "@agents/agent";
+import { buildSystemPrompt } from "@/lib/system-prompt";
 import dns from "node:dns";
 
 // Turbopack worker threads don't inherit --dns-result-order, so force IPv4 here.
@@ -100,7 +101,7 @@ export async function POST(request: Request) {
 
       const { data: profile } = await db
         .from("profiles")
-        .select("agent_system_prompt")
+        .select("agent_system_prompt, timezone")
         .eq("id", userId)
         .single();
 
@@ -135,7 +136,10 @@ export async function POST(request: Request) {
           resumeDecision: action as "approve" | "reject",
           sessionId,
           userId,
-          systemPrompt: profile?.agent_system_prompt ?? "Eres un asistente útil.",
+          systemPrompt: buildSystemPrompt(
+          profile?.agent_system_prompt ?? "Eres un asistente útil.",
+          profile?.timezone ?? "UTC"
+        ),
           db,
           enabledTools: (toolSettings ?? []).map((t: Record<string, unknown>) => ({
             id: t.id as string,
@@ -244,6 +248,19 @@ export async function POST(request: Request) {
   }
 
   const userId = telegramAccount.user_id;
+
+  // Handle /new — close current session and start fresh
+  if (command === "/new") {
+    await db
+      .from("agent_sessions")
+      .update({ status: "completed" })
+      .eq("user_id", userId)
+      .eq("channel", "telegram")
+      .eq("status", "active");
+
+    await sendTelegramMessage(chatId, "¡Nueva conversación iniciada! ¿En qué te puedo ayudar?");
+    return NextResponse.json({ ok: true });
+  }
 
   // Get or create session
   let session = await db
